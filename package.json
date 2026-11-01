@@ -1,0 +1,27 @@
+{
+  "name": "cynbit-backend-technical-audit",
+  "version": "1.0.0",
+  "description": "Backend technical audit report, security/performance analysis, and architectural improvements for Cynbit Technologies candidate assessment.",
+  "author": "Kashish Rathore <kashishrathoreo110@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "audit:probe": "tsx scripts/passive-audit-probe.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
