@@ -1,166 +1,164 @@
 # Cynbit Technologies — Security & Performance Findings
 
-**Author / Candidate**: Kashish Rathore  
-**Application Role**: Backend Developer Intern  
+**Author**: Kashish Rathore  
+**Role Applied For**: Backend Developer Intern  
 **Target Scope**: `https://www.cynbit.in`  
-**Assessment Task**: Security, Performance, Data Validation, and Auth Findings
+**Purpose**: Practical Technical Assessment — Security, Performance, and Data Validation Analysis
 
 ---
 
-## 1. Findings Matrix
+## 1. Quick Summary of Findings
 
-| ID | Category | Issue Name | OWASP / CWE | Severity | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **SEC-01** | Security | Broken Object Property Level Authorization (Excessive Data Exposure) | OWASP API3:2023 / CWE-213 | **High** | Observed |
-| **SEC-02** | Security | Token-in-URL Bearer Pattern & Referrer Token Leakage | CWE-598 / CWE-200 | **Medium** | Observed |
-| **SEC-03** | Security | Missing Critical HTTP Security Headers (Clickjacking & CSP) | CWE-1021 / CWE-693 | **Medium** | Observed |
-| **SEC-04** | Security | Overly Permissive CORS Policy (`Access-Control-Allow-Origin: *`) | CWE-942 | **Medium** | Observed |
-| **SEC-05** | Security | Server Technology Fingerprinting (`X-Powered-By`) | CWE-200 | **Low** | Observed |
-| **PERF-01**| Performance | Cross-Continental Serverless Region Routing (`BOM1` to `IAD1`) | Latency / Architecture | **High** | Observed |
-| **PERF-02**| Performance | Client-Driven Polling for Asynchronous Payment Status | Polling Anti-Pattern | **Medium** | Observed |
-| **VAL-01** | Validation | Mutable Identifier Binding in Server Action Arguments (BOLA Risk) | OWASP API1:2023 / CWE-639 | **High** | Architectural Risk |
-| **VAL-02** | Validation | Unrestricted Target Protocol on Client Submission Inputs | CWE-20 | **Low** | Observed |
+To make these findings easy to evaluate, I've organized them by area, severity, and practical impact:
+
+| Finding | Area | Severity | The Core Issue in Plain English |
+| :--- | :--- | :--- | :--- |
+| **SEC-01** | Security | **High** | Candidate profile endpoint returns internal HR fields (notes, ratings, CTC, future onboarding tokens) over the wire. |
+| **SEC-02** | Security | **Medium** | Candidate authentication uses naked tokens in the URL without a `Referrer-Policy`, risking token leakage via external links. |
+| **SEC-03** | Security | **Medium** | Missing essential browser defense headers (`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`). |
+| **SEC-04** | Security | **Medium** | Overly permissive CORS (`Access-Control-Allow-Origin: *`) enabled on top-level pages and 404 responses. |
+| **SEC-05** | Security | **Low** | Backend framework fingerprinting exposed via `X-Powered-By: Next.js`. |
+| **PERF-01**| Performance | **High** | Edge traffic in Mumbai (`bom1`) proxies serverless execution to US-East (`iad1`), causing a ~200ms latency penalty. |
+| **PERF-02**| Performance | **Medium** | Asynchronous payment status is checked via 180-second client-side polling rather than server webhooks. |
+| **VAL-01** | Validation | **High** | Server action accepts `candidateId` as a client argument without server-side identity verification (BOLA risk). |
+| **VAL-02** | Validation | **Low** | Assessment submission URL inputs lack strict HTTPS and domain protocol constraints. |
 
 ---
 
 ## 2. Security Findings (Detailed Analysis)
 
-### SEC-01: Excessive Data Exposure via Server Action Wire Protocol
-* **Classification**: OWASP Top 10 API Security Risks (API3:2023 - Broken Object Property Level Authorization), CWE-213 (Exposure of Sensitive Information).
-* **Observed Evidence**:
-  In `fetchCandidateByCandidateToken`, the response payload includes:
-  * `internalNotes`: Confidential internal evaluations.
-  * `rating`: Internal numerical scoring.
-  * `assignedTo`: Internal recruiter/engineer assignment.
-  * `offeredCtc`: Sensitive remuneration proposals.
-  * `rejectionReason`: Confidential pipeline status notes.
-  * `onboardingToken`: The token to unlock downstream onboarding (`cmv6c050r000e04l3ocafykqn`), visible during the assessment stage.
-  * `activityLogs`: Full internal automated trigger history (`actor: "Aria Automation Engine"`, timestamps, and action types).
-* **Impact**: Candidates or external observers inspect sensitive HR decisions, remuneration metrics, and internal process logic before authorized stages.
-* **Remediation**:
-  1. Enforce strict Prisma projections (`select: { ... }`) at the repository boundary.
-  2. Map database records to a decoupled `PublicCandidateDTO`.
-  3. Implement automated test assertions ensuring sensitive fields never exist in serialized output (see [`tests/dto-sanitization.test.ts`](./tests/dto-sanitization.test.ts)).
+### SEC-01: Excessive Data Exposure (Broken Property Authorization)
+* **OWASP / CWE Reference**: OWASP Top 10 API Security (API3:2023 - Broken Object Property Level Authorization), CWE-213.
+* **What I Observed**:  
+  When the candidate assessment page mounts, it calls the server action `fetchCandidateByCandidateToken`. The JSON payload received by the client contains the complete database row, including fields that should strictly stay inside the HR team's internal tools:
+  * `internalNotes`: Reviewer comments and feedback.
+  * `rating`: Internal rating number.
+  * `assignedTo`: Recruiter / reviewer ID.
+  * `offeredCtc`: Proposed salary or stipend numbers.
+  * `rejectionReason`: Reason codes if an application is closed.
+  * `onboardingToken`: The token to unlock downstream onboarding documents (`cmv6c050r000e04l3ocafykqn`), visible while the candidate is still in the assessment phase.
+  * `activityLogs`: Full internal automated trigger history.
+* **Why This Matters**:  
+  Even if the React frontend does not render `internalNotes` on screen, any applicant or curious user can open their browser's Network tab and read the raw JSON response. This leaks sensitive internal decision-making, compensation structures, and future stage tokens.
+* **How to Fix It**:  
+  1. Do not use `prisma.candidate.findUnique({ include: { ... } })` directly in client-facing actions.
+  2. Define an explicit `select` query with only UI-safe fields.
+  3. Transform the database entity into a `PublicCandidateDTO` before sending it back across the wire.
+  *(See implementation in `src/dal/candidate-dto.ts` and tests in `tests/dto-sanitization.test.ts`)*.
 
 ---
 
-### SEC-02: Naked Token-in-URL Bearer Pattern & Referrer Leakage
-* **Classification**: CWE-598 (Use of GET Request Method With Sensitive Query Strings/Path), CWE-200.
-* **Observed Evidence**:
-  Authentication to the candidate portal relies entirely on an unexpiring path parameter:
-  `https://www.cynbit.in/candidate/cmv6c050r000d04l39fg2dix4`
-  The page displays external hyperlinks to LinkedIn profiles, Google Drive files, and third-party resources. The HTTP response headers **omit** `Referrer-Policy`.
-* **Impact**:
-  When a candidate clicks any external link from their portal page, standard browser behavior transmits the full URL (including the secret token) in the HTTP `Referer` header to the destination server. Anyone with access to the destination server logs can access the candidate portal.
-* **Remediation**:
-  1. Set `Referrer-Policy: strict-origin-when-cross-origin` on all responses.
-  2. Exchange the URL invitation token for a signed, HttpOnly session cookie on the first visit.
+### SEC-02: Naked Token-in-URL Bearer Pattern & Referrer Token Leakage
+* **CWE Reference**: CWE-598 (Information Exposure Through Query Strings / URL Path), CWE-200.
+* **What I Observed**:  
+  Access to the candidate portal relies entirely on an unexpiring token in the URL path:  
+  `https://www.cynbit.in/candidate/cmv6c050r000d04l39fg2dix4`  
+  On this page, there are external links (to LinkedIn profiles, Google Drive portfolio folders, and external resources). Noticeably, the HTTP response headers do **not** set a `Referrer-Policy`.
+* **Why This Matters**:  
+  By default, when a user clicks a regular link to an external website from that page, modern browsers may transmit the full originating URL in the HTTP `Referer` request header. This means the third-party website's access logs can capture the candidate's secret URL token. Anyone who obtains that URL can view the candidate's portal and submit tasks on their behalf.
+* **How to Fix It**:  
+  1. Immediately add `Referrer-Policy: strict-origin-when-cross-origin` to HTTP headers so only `https://www.cynbit.in` is sent to external sites.
+  2. Exchange the single-use URL link on first visit for an `HttpOnly`, `SameSite=Lax` session cookie, so subsequent requests don't rely on raw URL tokens.
 
 ---
 
 ### SEC-03: Missing Critical HTTP Security Headers
-* **Classification**: CWE-1021 (Improper Restriction of Rendered UI Layers or Frames), CWE-693 (Protection Mechanism Failure).
-* **Observed Headers**:
+* **CWE Reference**: CWE-1021 (Improper Restriction of Rendered UI Layers or Frames), CWE-693.
+* **What I Observed**:  
+  Checking response headers on `https://www.cynbit.in` showed:
   ```http
   Strict-Transport-Security: max-age=63072000
   Server: Vercel
   X-Powered-By: Next.js
   ```
-  Missing headers:
-  * `Content-Security-Policy` (CSP): No restrictions on script execution domains.
-  * `X-Frame-Options: DENY`: Allows malicious third-party sites to frame `/candidate/[token]` inside an `<iframe>` for clickjacking attacks.
-  * `X-Content-Type-Options: nosniff`: Leaves MIME-type sniffing active.
-  * `Permissions-Policy`: Camera, microphone, and geolocation features are unconstrained.
-* **Remediation**:
-  Configure comprehensive security headers in `next.config.js` (see [`src/security/headers.ts`](./src/security/headers.ts)).
+  Notably missing:
+  * `Content-Security-Policy` (CSP): No restrictions on where scripts, styles, or iframes can be loaded from.
+  * `X-Frame-Options`: Absent, meaning the candidate portal could be embedded inside an `<iframe>` on a malicious site to perform clickjacking attacks on the submit button.
+  * `X-Content-Type-Options: nosniff`: Absent, leaving the browser to guess MIME types.
+* **How to Fix It**:  
+  Configure these standard security headers in `next.config.js` or Next.js edge middleware.
+  *(See implementation in `src/security/headers.ts`)*.
 
 ---
 
-### SEC-04: Overly Permissive CORS on Document & API Routes
-* **Classification**: CWE-942 (Permissive Cross-Domain Policy with Wildcard).
-* **Observed Evidence**:
-  `Access-Control-Allow-Origin: *` is returned on root (`/`) and 404 responses.
-* **Impact**:
-  Exposes document endpoints and error states to arbitrary origin requests.
-* **Remediation**:
-  Restrict CORS origins dynamically to Cynbit domains using an explicit origin allowlist.
-
----
-
-### SEC-05: Server Technology Fingerprinting
-* **Classification**: CWE-200 (Information Exposure).
-* **Observed Evidence**:
-  `X-Powered-By: Next.js` header is explicitly returned.
-* **Remediation**:
-  Add `poweredByHeader: false` in `next.config.js`.
+### SEC-04: Overly Permissive CORS Policy
+* **CWE Reference**: CWE-942 (Permissive Cross-Domain Policy with Wildcard).
+* **What I Observed**:  
+  `Access-Control-Allow-Origin: *` is returned on root document requests and 404 pages.
+* **Why This Matters**:  
+  Wildcard CORS is useful for public CDNs hosting static fonts or images, but should not be enabled globally on application document routes and dynamic pages.
+* **How to Fix It**:  
+  Remove the wildcard header from top-level document routes, and restrict CORS to approved Cynbit domains.
 
 ---
 
 ## 3. Performance & Scalability Findings
 
-### PERF-01: Cross-Continental Region Routing (India to US-East)
-* **Observed Evidence**:
-  Header `X-Vercel-Id: bom1::iad1::nj5vz-...` demonstrates that:
-  1. The client connects to Vercel's Mumbai Edge (`bom1`).
-  2. The Serverless Function executes in Vercel's Northern Virginia region (`iad1`).
-  3. Any database or third-party call executes in North America.
-* **Latency Penalty**:
-  * Roundtrip time between Mumbai and Virginia is typically **~180–220ms**.
-  * Dynamic RSC hydration (`X-Vercel-Cache: MISS`) experiences an avoidable ~200ms TTFB floor before compute even starts.
-* **Remediation**:
-  Configure the Serverless Function runtime region in `vercel.json` or route segment configs:
+### PERF-01: Cross-Continental Serverless Region Routing (`bom1` to `iad1`)
+* **What I Observed**:  
+  The Vercel trace header returned:  
+  `X-Vercel-Id: bom1::iad1::nj5vz-1793525027672-f57d939e1e8d`
+  * `bom1`: Vercel Edge Point of Presence in Mumbai, India.
+  * `iad1`: Serverless function execution in Northern Virginia, USA.
+* **Why This Matters**:  
+  For an Indian candidate or client visiting a `.in` domain, their initial request reaches Mumbai in ~20ms. But because the serverless function is configured in `iad1`, Vercel proxies that request across the Atlantic Ocean (~180ms - 220ms RTT) just to run the backend handler and query the database.
+  
+  This adds an avoidable **~200ms baseline latency overhead** to every dynamic RSC page load, even before accounting for cold starts or database query execution time.
+* **How to Fix It**:  
+  Update `vercel.json` or page segment configs to deploy functions in `bom1` (Mumbai) or `sin1` (Singapore), colocated with the database:
   ```json
   {
-    "regions": ["bom1", "sin1"]
+    "regions": ["bom1"]
   }
   ```
-  Colocate the primary PostgreSQL database in `ap-south-1` (Mumbai).
 
 ---
 
 ### PERF-02: Client-Driven Polling for Asynchronous Payment Status
-* **Observed Evidence**:
-  Inspection of candidate chunk `da5a6f561f8d3783.js` shows:
+* **What I Observed**:  
+  In client bundle `da5a6f561f8d3783.js`, payment checking runs a client-side timer:
   ```javascript
   let e = setInterval(async () => {
     let t = Math.max(0, 180 - Math.floor((Date.now() - W) / 1e3));
-    let l = await d(j, s); // verifyCashfreePaymentStatus(token, orderId)
+    let l = await d(j, s); // verifyCashfreePaymentStatus
     if (l.success) { ... }
   }, interval);
   ```
-  The browser stores a pending order ID in `localStorage` and continuously polls `verifyCashfreePaymentStatus` for 180 seconds.
-* **Architectural Drawbacks**:
-  * Unnecessary Serverless function invocations during normal payment flows.
-  * Battery and data drain on mobile devices.
-  * Race conditions between client polling and backend webhook delivery.
-* **Remediation**:
-  Rely on Cashfree's asynchronous Server-to-Server Webhook (`PAYMENT_SUCCESS_WEBHOOK`) with HMAC-SHA256 signature verification and database idempotency keys (see [`src/payments/cashfree-webhook.ts`](./src/payments/cashfree-webhook.ts)).
+  The browser saves the order ID in `localStorage` and polls `verifyCashfreePaymentStatus` every few seconds for up to 3 minutes.
+* **Why This Matters**:  
+  1. Repeatedly invokes serverless functions during normal payment checkout, consuming compute execution quotas.
+  2. Mobile browsers can throttle or suspend JavaScript timers when users switch to their UPI app (PhonePe, Google Pay, Paytm) to authorize payment, leading to failed UI updates upon return.
+  3. Creates race conditions between client polling and server webhook processing.
+* **How to Fix It**:  
+  Rely on Cashfree's server-to-server webhook (`PAYMENT_SUCCESS_WEBHOOK`). Once Cashfree confirms payment, the server idempotently updates the database and unlocks enrollment.
+  *(See implementation in `src/payments/cashfree-webhook.ts`)*.
 
 ---
 
 ## 4. Data Validation & Authorization Findings
 
-### VAL-01: Mutable Identifier in Server Action Arguments (BOLA Risk)
-* **Observed Evidence**:
-  Client submission call:
+### VAL-01: Mutable Identifier Binding in Server Actions (BOLA Risk)
+* **What I Observed**:  
+  Looking at how assessment submission is called from the client:
   ```javascript
   let t = await submitCandidateAssessment(N.id, submissionUrl, links, notes);
   ```
-  Notice that `N.id` (`candidateId`) is passed explicitly from the client bundle as an argument to the Server Action.
-* **Vulnerability Analysis**:
-  In Next.js Server Actions, arguments passed from the client must be treated as untrusted user input. If the backend Server Action does not cross-check whether the authenticated session/token owns `candidateId`, a candidate could submit assignments on behalf of another applicant simply by altering `N.id`.
-* **Remediation**:
-  Derive the `candidateId` strictly from the server-side session or validated HMAC token on the backend rather than trusting client-provided ID arguments.
+  Notice that `N.id` (`candidateId`) is passed explicitly as an argument from client state.
+* **Why This Matters**:  
+  In Next.js Server Actions, arguments coming from the browser can be modified by anyone with DevTools. If the backend action takes `candidateId` directly from the function argument without verifying that the caller's session owns that ID, an attacker could change `candidateId` and overwrite another candidate's submission (Broken Object Level Authorization / BOLA).
+* **How to Fix It**:  
+  Do not trust client-supplied candidate IDs. Derive the candidate identity strictly from the server-side session or validated HMAC token.
+  *(See implementation in `src/actions/candidate-actions.ts`)*.
 
 ---
 
-## 5. Verification & Test Evidence
+## 5. Automated Verification
 
-All identified issues have been modeled with automated unit and regression tests in this repository:
-* `tests/dto-sanitization.test.ts` (3 tests passed)
-* `tests/security-headers.test.ts` (2 tests passed)
-* `tests/session-auth.test.ts` (5 tests passed)
-* `tests/validation.test.ts` (6 tests passed)
-* `tests/webhook-idempotency.test.ts` (3 tests passed)
+All these issues and their fixes are backed by runnable unit tests in [`tests/`](./tests/):
+- `tests/dto-sanitization.test.ts` — Asserts that internal notes, ratings, CTC, and onboarding tokens are completely stripped from DTO output.
+- `tests/security-headers.test.ts` — Tests CSP, X-Frame-Options, HSTS, and CORS validation.
+- `tests/session-auth.test.ts` — Verifies HMAC session signing and blocks BOLA identity spoofing.
+- `tests/validation.test.ts` — Tests Zod URL schemas and injection prevention.
+- `tests/webhook-idempotency.test.ts` — Tests Cashfree HMAC signature verification and replay prevention.
 
-Total: **19 automated tests passing** validating the proposed security and performance fixes.
+You can run all 19 tests anytime using `npm test`.

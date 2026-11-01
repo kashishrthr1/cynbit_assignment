@@ -1,112 +1,115 @@
-# Cynbit Technologies — Backend Technical Audit & Architectural Optimization
+# Cynbit Technologies — Backend Technical Audit & Improvements
 
 [![Test Suite](https://img.shields.io/badge/tests-19%20passed-brightgreen.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-blue.svg)]()
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-green.svg)]()
-[![Security Audit](https://img.shields.io/badge/OWASP-API3%3A2023%20Remediated-success.svg)]()
 
 > **Applicant**: Kashish Rathore  
-> **Role**: Backend Developer Intern  
-> **Task**: Practical Technical Assessment — *Analyze Cynbit From a Backend Perspective*  
-> **Deadline**: Mon, Nov 2, 09:12 AM  
+> **Role Applied For**: Backend Developer Intern  
+> **Challenge**: Practical Technical Assessment — *Analyze Cynbit From a Backend Perspective*  
+> **Submission Deadline**: Mon, Nov 2, 09:12 AM  
 > **Candidate Portal**: `https://www.cynbit.in/candidate/cmv6c050r000d04l39fg2dix4`
 
 ---
 
-## 📌 Executive Overview
+## 💡 About This Project
 
-This repository delivers an end-to-end backend technical audit and engineering enhancement suite for **Cynbit Technologies** (`https://www.cynbit.in`), analyzed strictly through passive, authorized, non-intrusive observation.
+This repository contains my end-to-end technical analysis of Cynbit's platform (`https://www.cynbit.in`) and candidate lifecycle portal (`/candidate/[token]`) from a backend engineering perspective.
 
-### Assessment Deliverables Summary
+All analysis was conducted strictly via **passive, authorized observation** (inspecting public response headers, React Server Components wire protocol data, network latencies, and client JS bundles). No active penetration testing or invasive attacks were performed.
 
-1. [**`AUDIT_REPORT.md`**](./AUDIT_REPORT.md): Complete backend architectural deconstruction covering Next.js App Router RSC wire protocol, Vercel Serverless runtime topologies, discovered Server Action hashes, and data over-fetching analysis.
-2. [**`SECURITY_AND_PERFORMANCE.md`**](./SECURITY_AND_PERFORMANCE.md): Categorized findings matrix covering OWASP API3:2023 (Excessive Data Exposure), missing browser security headers, token-in-URL referrer leakage, cross-continental serverless latency (`bom1` to `iad1`), and payment polling bottlenecks.
-3. [**`RECOMMENDATIONS.md`**](./RECOMMENDATIONS.md): Architectural solutions and drop-in code implementations covering Next.js security headers, decoupled DTO projections, Zod schema validation, HMAC-signed session management, and idempotent Cashfree webhook processing.
+In addition to documenting findings, I wrote **working TypeScript implementations** and **19 automated unit tests** to show exactly how I would resolve each issue if I were working on Cynbit's engineering team.
 
 ---
 
-## 🏗️ Repository Architecture
+## 📂 The Three Required Deliverables
+
+1. [**`AUDIT_REPORT.md`**](./AUDIT_REPORT.md)  
+   **Backend Technical Audit Report**: Architectural breakdown of Cynbit's Next.js App Router stack, Vercel Serverless routing, discovered Server Action hashes, and network data flows.
+
+2. [**`SECURITY_AND_PERFORMANCE.md`**](./SECURITY_AND_PERFORMANCE.md)  
+   **Security & Performance Findings**: Detailed analysis of excessive data exposure (OWASP API3:2023), missing browser security headers, URL token leakage risks, cross-continental serverless latency (`bom1` to `iad1`), and client-side payment polling.
+
+3. [**`RECOMMENDATIONS.md`**](./RECOMMENDATIONS.md)  
+   **Recommended Improvements**: Production-ready architectural blueprints and code solutions covering strict DTO projections, Next.js security headers, Zod schemas, HMAC session management, and idempotent webhooks.
+
+---
+
+## 🔍 Key Findings at a Glance
+
+| What I Found | Why It Matters | How I Fixed It |
+| :--- | :--- | :--- |
+| **Over-fetching on Candidate Profile** | `fetchCandidateByCandidateToken` returns internal HR notes, rating, assigned recruiter, offered CTC, and future onboarding tokens. | Implemented database-level `select` projection and a decoupled `PublicCandidateDTO`. |
+| **Missing Security Headers** | Missing CSP, `X-Frame-Options`, and `Referrer-Policy`. Risks clickjacking and URL token leakage when clicking external portfolio links. | Configured strict security headers in `next.config.js`. |
+| **Cross-Continental Latency** | Edge POP in Mumbai (`bom1`) proxies dynamic execution to US-East (`iad1`), adding ~200ms of avoidable latency. | Colocate serverless execution in Mumbai (`bom1`). |
+| **Payment Polling Anti-Pattern** | Browser polls `verifyCashfreePaymentStatus` for 180s via `localStorage` timers. | Replaced with an idempotent, HMAC-SHA256 verified server webhook handler. |
+
+---
+
+## 🛠️ Repository Structure
 
 ```
 .
 ├── AUDIT_REPORT.md                 # Deliverable 1: Backend Technical Audit Report
 ├── SECURITY_AND_PERFORMANCE.md     # Deliverable 2: Security & Performance Findings
-├── RECOMMENDATIONS.md              # Deliverable 3: Recommended Improvements & Architectural Specs
-├── package.json                    # Project definition & scripts
+├── RECOMMENDATIONS.md              # Deliverable 3: Recommended Improvements & Code
+├── package.json                    # Project configuration & npm scripts
 ├── tsconfig.json                   # Strict TypeScript compiler config
-├── vitest.config.ts                # Automated test runner configuration
+├── vitest.config.ts                # Vitest test runner configuration
 ├── scripts/
-│   └── passive-audit-probe.ts      # Live passive probe tool to verify response headers & telemetry
+│   └── passive-audit-probe.ts      # Reproducible CLI script to inspect headers & telemetry
 ├── src/
 │   ├── actions/
-│   │   └── candidate-actions.ts    # Hardened Server Actions with session binding & BOLA prevention
+│   │   └── candidate-actions.ts    # Secure Server Actions with BOLA prevention
 │   ├── dal/
-│   │   ├── candidate-dto.ts        # Data Access Layer & strict Prisma field projections
-│   │   └── types.ts                # Domain entity vs Public DTO type contracts
+│   │   ├── candidate-dto.ts        # Prisma select projections & clean DTO mapping
+│   │   └── types.ts                # Internal Entity vs Public DTO types
 │   ├── security/
-│   │   ├── headers.ts              # Production HTTP security headers & CORS policy
-│   │   └── session.ts              # Sealed HMAC-SHA256 candidate session management
+│   │   ├── headers.ts              # Production security headers & dynamic CORS
+│   │   └── session.ts              # Sealed HMAC-SHA256 candidate sessions
 │   ├── validation/
-│   │   └── schemas.ts              # Strict Zod schemas for candidate inputs and tickets
+│   │   └── schemas.ts              # Zod validation schemas for inputs & submissions
 │   └── payments/
-│       └── cashfree-webhook.ts     # Idempotent Cashfree webhook processor with signature check
+│       └── cashfree-webhook.ts     # Idempotent Cashfree webhook processor
 └── tests/
-    ├── dto-sanitization.test.ts    # 3 tests: Guarantees zero leakage of internal notes/CTC/tokens
-    ├── security-headers.test.ts    # 2 tests: Validates CSP, XFO, nosniff, and CORS isolation
-    ├── session-auth.test.ts        # 5 tests: Verifies HMAC signing, expiration, and BOLA blocking
-    ├── validation.test.ts          # 6 tests: Verifies URL schemas, injection defense, and input limits
-    └── webhook-idempotency.test.ts # 3 tests: Verifies Cashfree HMAC-SHA256 & replay defense
+    ├── dto-sanitization.test.ts    # Verifies internal notes, CTC & tokens never leak
+    ├── security-headers.test.ts    # Verifies CSP, X-Frame-Options, and CORS isolation
+    ├── session-auth.test.ts        # Verifies HMAC tokens, TTL, and BOLA blocking
+    ├── validation.test.ts          # Verifies URL validation & injection protection
+    └── webhook-idempotency.test.ts # Verifies Cashfree HMAC verification & replay defense
 ```
 
 ---
 
-## ⚡ Quick Start & Verification
+## 🚀 Running the Tests & Code Locally
 
-### 1. Installation
+### 1. Install Dependencies
 ```bash
-# Clone the repository
-git clone https://github.com/kashishrthr1/cynbit-backend-audit.git
-cd cynbit-backend-audit
-
-# Install dependencies
 npm install --legacy-peer-deps
 ```
 
-### 2. Run Automated Test Suite
+### 2. Run the Automated Test Suite (19 tests)
 ```bash
-# Executes 19 unit & security tests with Vitest
 npm test
 ```
 
-### 3. Typecheck Codebase
+### 3. Verify TypeScript Types
 ```bash
-# Validates TypeScript types across src, tests, and scripts
 npm run build
 ```
 
-### 4. Run Passive Audit Probe
+### 4. Run the Passive Audit Probe
 ```bash
-# Non-intrusively probes cynbit.in to verify observable headers and serverless telemetry
 npm run audit:probe
 ```
 
 ---
 
-## 🔍 Key Findings Highlights
+## 👩‍💻 Author & Contact
 
-| Area | Observation | Impact | Solution |
-| :--- | :--- | :--- | :--- |
-| **Data Exposure** | `fetchCandidateByCandidateToken` returns internal HR notes, rating, assignedTo, offeredCtc, and onboarding tokens. | Sensitive company data visible in client RSC payloads. | Implemented `candidatePortalSelect` Prisma projection and `PublicCandidateDTO`. |
-| **Security Headers** | Missing CSP, `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`. | Clickjacking exposure; candidate secret URL token leaks via HTTP `Referer`. | Configured strict CSP, `X-Frame-Options: DENY`, and `Referrer-Policy: strict-origin-when-cross-origin`. |
-| **Regional Latency** | Edge POP in Mumbai (`bom1`) forwards dynamic functions to Virginia (`iad1`). | ~200ms added latency floor on every dynamic page load. | Colocate Serverless Function execution in `bom1` (Mumbai). |
-| **Payment Flow** | Client polls `verifyCashfreePaymentStatus` for 180s in `localStorage`. | Unnecessary compute invocations, client battery drain, race conditions. | Implemented idempotent, HMAC-SHA256 verified server webhook handler. |
-
----
-
-## 👤 Author Information
-
-* **Candidate**: Kashish Rathore
-* **Degree**: B.Tech / B.E. (Computer Science), Madhav Institute of Technology and Science (MITS)
+* **Applicant**: Kashish Rathore
+* **College**: Madhav Institute of Technology and Science (MITS), Gwalior
+* **Major**: B.Tech / B.E. in Computer Science Engineering (Graduation: 2027)
 * **Email**: `kashishrathoreo110@gmail.com`
 * **LinkedIn**: [linkedin.com/in/kashishh-rathore](https://www.linkedin.com/in/kashishh-rathore)
 * **GitHub**: [@kashishrthr1](https://github.com/kashishrthr1)
