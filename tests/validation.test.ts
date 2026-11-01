@@ -5,7 +5,7 @@ describe('Zod Input Validation & Sanitization', () => {
   it('accepts valid GitHub repository submissions with HTTPS', () => {
     const validPayload = {
       candidateId: 'cmv6c050r000c04l3crjsb348',
-      submissionUrl: 'https://github.com/kashishrthr1/cynbit-backend-audit',
+      submissionUrl: 'https://github.com/kashishrthr1/cynbit_assignment',
       additionalUrls: ['https://drive.google.com/file/d/audit-doc'],
       notes: 'Completed comprehensive backend technical audit with zero data leakage DTO implementation.',
     };
@@ -17,7 +17,7 @@ describe('Zod Input Validation & Sanitization', () => {
   it('rejects insecure HTTP submission URLs', () => {
     const insecurePayload = {
       candidateId: 'cmv6c050r000c04l3crjsb348',
-      submissionUrl: 'http://github.com/kashishrthr1/cynbit-backend-audit',
+      submissionUrl: 'http://github.com/kashishrthr1/cynbit_assignment',
       additionalUrls: [],
       notes: 'Test notes',
     };

@@ -103,7 +103,7 @@ describe('Candidate Session Authentication & BOLA Prevention', () => {
     const result = await candidateService.submitAssessment(
       {
         candidateId: mockCandidate.id,
-        submissionUrl: 'https://github.com/kashishrthr1/cynbit-backend-audit',
+        submissionUrl: 'https://github.com/kashishrthr1/cynbit_assignment',
         additionalUrls: ['https://drive.google.com/file/d/audit-notes'],
         notes: 'Submitted full assessment solution.',
       },
